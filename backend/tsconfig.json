@@ -1,0 +1,20 @@
+{
+    "compilerOptions": {
+        "target": "ES2022", // output modern JS — Node 18+ supports it
+        "module": "NodeNext", // use Node's native ESM module resolution
+        "moduleResolution": "NodeNext", // must match "module" above
+        "outDir": "./dist", // compiled JS goes here (for production)
+        "rootDir": "./src", // all source files live here
+        "strict": true, // catches bugs at compile time — always on
+        "esModuleInterop": true, // lets import CommonJS packages cleanly
+        "skipLibCheck": true, // skip type-checking node_modules (faster)
+        "types": ["node"] // make Node globals (process, __dirname, Buffer…) available
+    },
+    "include": [
+        "src/**/*"
+    ],
+    "exclude": [
+        "node_modules",
+        "dist"
+    ]
+}
