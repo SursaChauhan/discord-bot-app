@@ -27,19 +27,16 @@ export async function requireAuth(c: Context<{ Variables: Variables }>, next: Ne
         return c.json({ error: 'Token missing email claim' }, 401);
     }
 
-    // Layer 2: check email is in our admin_users allowlist
-    console.log('[requireAuth] Decoded email from token:', email);
+    // Verify email is in our admin_users allowlist
     const { data, error } = await supabase
         .from('admin_users')
         .select('id')
-        .eq('email', email)
+        .eq('email', email.trim())
         .single();
 
     if (error || !data) {
-        console.error('[requireAuth] Auth check failed in DB for email:', email, 'Error:', error);
         return c.json({ error: 'Not authorized' }, 403);
     }
-    console.log('[requireAuth] Auth verification successful for:', email);
 
     // Pass email to route handlers via context
     c.set('userEmail', email);

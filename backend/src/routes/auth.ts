@@ -1,14 +1,11 @@
 import { Hono } from 'hono';
 import jwt from 'jsonwebtoken';
+import { createClient } from '@supabase/supabase-js';
 import { supabase } from '../services/supabase.js';
 
 const auth = new Hono();
 
-// We create a separate Supabase client here using the anon key pattern
-// for signInWithPassword — service_role doesn't do auth flows
-// Actually: signInWithPassword works fine with service_role client too
 // POST /auth/login
-
 auth.post('/login', async (c) => {
     const { email, password } = await c.req.json();
 
@@ -16,8 +13,19 @@ auth.post('/login', async (c) => {
         return c.json({ error: 'Email and password required' }, 400);
     }
 
-    // Supabase validates credentials against auth.users table
-    const { data, error } = await supabase.auth.signInWithPassword({
+    // Create a local, temporary client for login to avoid mutating the global singleton's auth headers
+    const localClient = createClient(
+        process.env.SUPABASE_URL!,
+        process.env.SUPABASE_SERVICE_ROLE_KEY!,
+        {
+            auth: {
+                persistSession: false,
+                autoRefreshToken: false,
+            },
+        }
+    );
+
+    const { data, error } = await localClient.auth.signInWithPassword({
         email,
         password,
     });
@@ -27,7 +35,6 @@ auth.post('/login', async (c) => {
     }
 
     // Sign our own JWT with the user's email embedded
-    // This is what the frontend stores and sends as Bearer token
     const token = jwt.sign(
         { email: data.user.email, sub: data.user.id },
         process.env.JWT_SECRET!,
