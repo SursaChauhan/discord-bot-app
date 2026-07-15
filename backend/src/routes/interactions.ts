@@ -84,36 +84,76 @@ async function processCommand(
             .single();
 
         const aiEnabled = server?.config?.ai_enabled ?? false;
+        const serverName = server?.guild_name ?? guildId;
 
         // Handle /report command
         if (commandName === 'report' && commandText) {
-            let aiPart = '';
+            let aiSummaryData: any = null;
 
             if (aiEnabled) {
                 const result = await summarizeReport(commandText);
                 if (result) {
+                    aiSummaryData = result;
                     aiSummary = JSON.stringify(result);
-                    aiPart = `\n📊 **AI Summary:** ${result.summary}\n🏷️ **Tags:** ${result.tags.join(', ')}`;
                 }
             }
 
-            responseContent = `✅ **Report received!**\n📝 "${commandText}"${aiPart}`;
+            // Construct Discord Rich Embed
+            const fields = [];
+            if (aiSummaryData) {
+                fields.push({
+                    name: '📊 AI Summary',
+                    value: aiSummaryData.summary,
+                });
+                fields.push({
+                    name: '🏷️ Tags',
+                    value: aiSummaryData.tags.map((t: string) => `\`${t}\``).join(', '),
+                });
+            }
 
-            // Send mirror notification to Slack
+            responseContent = {
+                embeds: [
+                    {
+                        title: '✅ Report Received',
+                        description: `"${commandText}"`,
+                        color: 8351679, // violet/purple
+                        fields,
+                        footer: {
+                            text: `Server: ${serverName} | Submitter: ${username}`,
+                        },
+                        timestamp: new Date().toISOString(),
+                    }
+                ]
+            } as any;
+
+            // Send mirror notification to Slack (using readable server name)
             mirrored = await sendToSlack(
                 server?.mirror_webhook_url,
-                `📢 New report from ${guildId}\nUser: ${username} (<@${userId}>)\nText: ${commandText}${aiSummary ? `\nAI: ${JSON.parse(aiSummary).summary}` : ''}`
+                `📢 New report from *${serverName}*\nUser: ${username} (ID: ${userId})\nText: ${commandText}${aiSummaryData ? `\nAI: ${aiSummaryData.summary}` : ''}`
             );
         }
 
         // Handle /status command
         else if (commandName === 'status') {
-            const customResponse = server?.config?.custom_responses?.status;
-            responseContent = customResponse ?? '✅ Bot is online and operational!';
+            const customResponse = server?.config?.custom_responses?.status ?? 'Bot is online and operational!';
+            
+            responseContent = {
+                embeds: [
+                    {
+                        title: '📡 System Status',
+                        description: `✅ ${customResponse}`,
+                        color: 1673830, // emerald green
+                        footer: {
+                            text: `Server: ${serverName}`,
+                        },
+                        timestamp: new Date().toISOString(),
+                    }
+                ]
+            } as any;
 
             mirrored = await sendToSlack(
                 server?.mirror_webhook_url,
-                `📡 Status check from guild: ${guildId}`
+                `📡 Status check from server: *${serverName}*`
             );
         }
 

@@ -49,6 +49,35 @@ export default function Dashboard() {
 
   const token = localStorage.getItem('token');
 
+  const fetchStats = async () => {
+    try {
+      const statsRes = await fetch('/api/interactions?limit=1000', {
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      });
+      if (statsRes.ok) {
+        const statsData = await statsRes.json();
+        const list = (statsData.interactions || []) as Interaction[];
+        const totalCount = statsData.total || 0;
+        const processedCount = list.filter(i => i.status === 'processed').length;
+        const failedCount = list.filter(i => i.status === 'failed').length;
+        const mirroredCount = list.filter(i => i.mirrored).length;
+        const aiCount = list.filter(i => i.ai_summary).length;
+
+        setStats({
+          total: totalCount,
+          processed: processedCount,
+          failed: failedCount,
+          mirrored: mirroredCount,
+          aiSummarized: aiCount
+        });
+      }
+    } catch (err) {
+      console.error('Error fetching dashboard stats:', err);
+    }
+  };
+
   const fetchInteractions = async () => {
     setLoading(true);
     try {
@@ -66,33 +95,6 @@ export default function Dashboard() {
         const data = await res.json();
         setInteractions(data.interactions || []);
         setTotal(data.total || 0);
-
-        // Fetch overall stats (by fetching with no limit just to compute them, or simple aggregation)
-        // For simplicity in a single tenant dashboard, we can compute stats from metadata or do a dedicated fetch.
-        // Let's compute based on the current page or fetch stats. Since we have a backend offset query, we will fetch overall status.
-        // To avoid double loading, let's update stats based on counts.
-        const statsRes = await fetch('/api/interactions?limit=1000', {
-          headers: {
-            Authorization: `Bearer ${token}`
-          }
-        });
-        if (statsRes.ok) {
-          const statsData = await statsRes.json();
-          const list = (statsData.interactions || []) as Interaction[];
-          const totalCount = statsData.total || 0;
-          const processedCount = list.filter(i => i.status === 'processed').length;
-          const failedCount = list.filter(i => i.status === 'failed').length;
-          const mirroredCount = list.filter(i => i.mirrored).length;
-          const aiCount = list.filter(i => i.ai_summary).length;
-
-          setStats({
-            total: totalCount,
-            processed: processedCount,
-            failed: failedCount,
-            mirrored: mirroredCount,
-            aiSummarized: aiCount
-          });
-        }
       }
     } catch (err) {
       console.error('Error fetching dashboard data:', err);
@@ -101,9 +103,20 @@ export default function Dashboard() {
     }
   };
 
+  const handleRefresh = () => {
+    fetchInteractions();
+    fetchStats();
+  };
+
+  // Fetch interactions when page or filters change (without re-fetching overall stats)
   useEffect(() => {
     fetchInteractions();
   }, [page, commandFilter, statusFilter]);
+
+  // Fetch overall server stats once on mount
+  useEffect(() => {
+    fetchStats();
+  }, []);
 
   const totalPages = Math.ceil(total / limit) || 1;
 
@@ -203,7 +216,7 @@ export default function Dashboard() {
           <div className="flex items-center gap-3 w-full md:w-auto">
             <h2 className="font-semibold text-lg text-slate-200">Interactions Log</h2>
             <button 
-              onClick={fetchInteractions}
+              onClick={handleRefresh}
               className="text-slate-400 hover:text-slate-200 p-1.5 rounded-lg hover:bg-slate-800/50 border border-slate-800 transition-all cursor-pointer"
               title="Refresh"
             >
@@ -370,120 +383,118 @@ export default function Dashboard() {
             className="absolute inset-0 bg-slate-950/60 backdrop-blur-sm transition-opacity" 
             onClick={() => setSelectedInteraction(null)}
           />
-          
           <div className="absolute inset-y-0 right-0 max-w-full pl-10 flex">
-            <div className="w-screen max-w-md bg-slate-900 border-l border-slate-800/80 shadow-2xl p-6 flex flex-col justify-between">
-              <div>
-                {/* Header */}
-                <div className="flex items-start justify-between pb-4 border-b border-slate-800/80">
+            <div className="h-full w-screen max-w-md bg-slate-900 border-l border-slate-800/80 shadow-2xl p-6 flex flex-col">
+              {/* Header */}
+              <div className="flex items-start justify-between pb-4 border-b border-slate-800/80 flex-shrink-0">
+                <div>
+                  <h3 className="text-lg font-bold text-slate-200">Inspect Interaction</h3>
+                  <p className="text-xs text-slate-500 font-mono mt-1">ID: {selectedInteraction.interaction_id}</p>
+                </div>
+                <button 
+                  onClick={() => setSelectedInteraction(null)}
+                  className="text-slate-500 hover:text-slate-200 p-1 rounded-md hover:bg-slate-800/50 cursor-pointer"
+                >
+                  <XCircle size={20} />
+                </button>
+              </div>
+
+              {/* Body Details */}
+              <div className="flex-1 min-h-0 overflow-y-auto py-6 space-y-5">
+                {/* Status Badge & Timestamp */}
+                <div className="flex justify-between items-center bg-slate-950/40 p-3.5 rounded-xl border border-slate-800/50">
                   <div>
-                    <h3 className="text-lg font-bold text-slate-200">Inspect Interaction</h3>
-                    <p className="text-xs text-slate-500 font-mono mt-1">ID: {selectedInteraction.interaction_id}</p>
+                    <div className="text-2xs text-slate-500 uppercase tracking-wider font-semibold">Processed Date</div>
+                    <div className="text-xs text-slate-300 font-medium mt-0.5">{formatDate(selectedInteraction.created_at)}</div>
                   </div>
-                  <button 
-                    onClick={() => setSelectedInteraction(null)}
-                    className="text-slate-500 hover:text-slate-200 p-1 rounded-md hover:bg-slate-800/50 cursor-pointer"
-                  >
-                    <XCircle size={20} />
-                  </button>
+                  {selectedInteraction.status === 'processed' ? (
+                    <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                      Processed
+                    </span>
+                  ) : selectedInteraction.status === 'failed' ? (
+                    <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold bg-red-500/10 text-red-400 border border-red-500/20">
+                      Failed
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                      Received
+                    </span>
+                  )}
                 </div>
 
-                {/* Body Details */}
-                <div className="py-6 space-y-5 overflow-y-auto">
-                  {/* Status Badge & Timestamp */}
-                  <div className="flex justify-between items-center bg-slate-950/40 p-3.5 rounded-xl border border-slate-800/50">
-                    <div>
-                      <div className="text-2xs text-slate-500 uppercase tracking-wider font-semibold">Processed Date</div>
-                      <div className="text-xs text-slate-300 font-medium mt-0.5">{formatDate(selectedInteraction.created_at)}</div>
+                {/* Metadata (User & Server) */}
+                <div className="space-y-3">
+                  <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Discord Metadata</h4>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="bg-slate-950/40 p-3 rounded-xl border border-slate-800/40">
+                      <span className="text-2xs text-slate-500 uppercase">Username</span>
+                      <p className="text-sm font-semibold text-slate-300 mt-0.5 truncate">{selectedInteraction.username}</p>
                     </div>
-                    {selectedInteraction.status === 'processed' ? (
-                      <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                        Processed
-                      </span>
-                    ) : selectedInteraction.status === 'failed' ? (
-                      <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold bg-red-500/10 text-red-400 border border-red-500/20">
-                        Failed
-                      </span>
-                    ) : (
-                      <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold bg-amber-500/10 text-amber-400 border border-amber-500/20">
-                        Received
-                      </span>
+                    <div className="bg-slate-950/40 p-3 rounded-xl border border-slate-800/40">
+                      <span className="text-2xs text-slate-500 uppercase">User ID</span>
+                      <p className="text-sm font-semibold text-slate-300 mt-0.5 truncate">{selectedInteraction.user_id}</p>
+                    </div>
+                    <div className="bg-slate-950/40 p-3 rounded-xl border border-slate-800/40 col-span-2">
+                      <span className="text-2xs text-slate-500 uppercase">Discord Server ID (Guild)</span>
+                      <p className="text-sm font-semibold text-slate-300 mt-0.5 font-mono truncate">{selectedInteraction.guild_id}</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Command Input Details */}
+                <div className="space-y-2">
+                  <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Trigger command</h4>
+                  <div className="bg-slate-950/40 p-4 rounded-xl border border-slate-800/40 font-mono">
+                    <span className="text-violet-400 text-sm">/{selectedInteraction.command_name}</span>
+                    {selectedInteraction.command_text && (
+                      <p className="text-slate-300 text-sm mt-2 whitespace-pre-wrap break-all">
+                        {selectedInteraction.command_text}
+                      </p>
                     )}
                   </div>
+                </div>
 
-                  {/* Metadata (User & Server) */}
-                  <div className="space-y-3">
-                    <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Discord Metadata</h4>
-                    <div className="grid grid-cols-2 gap-3">
-                      <div className="bg-slate-950/40 p-3 rounded-xl border border-slate-800/40">
-                        <span className="text-2xs text-slate-500 uppercase">Username</span>
-                        <p className="text-sm font-semibold text-slate-300 mt-0.5 truncate">{selectedInteraction.username}</p>
-                      </div>
-                      <div className="bg-slate-950/40 p-3 rounded-xl border border-slate-800/40">
-                        <span className="text-2xs text-slate-500 uppercase">User ID</span>
-                        <p className="text-sm font-semibold text-slate-300 mt-0.5 truncate">{selectedInteraction.user_id}</p>
-                      </div>
-                      <div className="bg-slate-950/40 p-3 rounded-xl border border-slate-800/40 col-span-2">
-                        <span className="text-2xs text-slate-500 uppercase">Discord Server ID (Guild)</span>
-                        <p className="text-sm font-semibold text-slate-300 mt-0.5 font-mono truncate">{selectedInteraction.guild_id}</p>
-                      </div>
-                    </div>
+                {/* Gemini Summary (if applicable) */}
+                {selectedInteraction.ai_summary && (
+                  <div className="space-y-1">
+                    <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider">AI Insights</h4>
+                    {renderAISummary(selectedInteraction.ai_summary)}
                   </div>
+                )}
 
-                  {/* Command Input Details */}
-                  <div className="space-y-2">
-                    <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Trigger command</h4>
-                    <div className="bg-slate-950/40 p-4 rounded-xl border border-slate-800/40 font-mono">
-                      <span className="text-violet-400 text-sm">/{selectedInteraction.command_name}</span>
-                      {selectedInteraction.command_text && (
-                        <p className="text-slate-300 text-sm mt-2 whitespace-pre-wrap break-all">
-                          {selectedInteraction.command_text}
-                        </p>
+                {/* Integrations checklist */}
+                <div className="space-y-2">
+                  <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Pipeline Output</h4>
+                  <div className="divide-y divide-slate-800/40 bg-slate-950/40 rounded-xl border border-slate-800/40 px-4 py-1">
+                    <div className="flex justify-between items-center py-2.5">
+                      <div className="flex items-center gap-2 text-sm text-slate-300">
+                        <MessageSquare size={16} className="text-slate-500" />
+                        <span>Discord Response Followup</span>
+                      </div>
+                      {selectedInteraction.response_sent ? (
+                        <span className="text-xs text-emerald-400 font-semibold">Sent</span>
+                      ) : (
+                        <span className="text-xs text-slate-500">Not Sent</span>
                       )}
                     </div>
-                  </div>
 
-                  {/* Gemini Summary (if applicable) */}
-                  {selectedInteraction.ai_summary && (
-                    <div className="space-y-1">
-                      <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider">AI Insights</h4>
-                      {renderAISummary(selectedInteraction.ai_summary)}
-                    </div>
-                  )}
-
-                  {/* Integrations checklist */}
-                  <div className="space-y-2">
-                    <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Pipeline Output</h4>
-                    <div className="divide-y divide-slate-800/40 bg-slate-950/40 rounded-xl border border-slate-800/40 px-4 py-1">
-                      <div className="flex justify-between items-center py-2.5">
-                        <div className="flex items-center gap-2 text-sm text-slate-300">
-                          <MessageSquare size={16} className="text-slate-500" />
-                          <span>Discord Response Followup</span>
-                        </div>
-                        {selectedInteraction.response_sent ? (
-                          <span className="text-xs text-emerald-400 font-semibold">Sent</span>
-                        ) : (
-                          <span className="text-xs text-slate-500">Not Sent</span>
-                        )}
+                    <div className="flex justify-between items-center py-2.5">
+                      <div className="flex items-center gap-2 text-sm text-slate-300">
+                        <SlackIcon size={16} className="text-slate-500" />
+                        <span>Slack Mirror</span>
                       </div>
-
-                      <div className="flex justify-between items-center py-2.5">
-                        <div className="flex items-center gap-2 text-sm text-slate-300">
-                          <SlackIcon size={16} className="text-slate-500" />
-                          <span>Slack Mirror</span>
-                        </div>
-                        {selectedInteraction.mirrored ? (
-                          <span className="text-xs text-pink-400 font-semibold">Mirrored</span>
-                        ) : (
-                          <span className="text-xs text-slate-500">Skipped / No Webhook</span>
-                        )}
-                      </div>
+                      {selectedInteraction.mirrored ? (
+                        <span className="text-xs text-pink-400 font-semibold">Mirrored</span>
+                      ) : (
+                        <span className="text-xs text-slate-500">Skipped / No Webhook</span>
+                      )}
                     </div>
                   </div>
                 </div>
               </div>
 
-              <div className="pt-4 border-t border-slate-800/80">
+              {/* Footer */}
+              <div className="pt-4 border-t border-slate-800/80 flex-shrink-0 mt-auto">
                 <button 
                   onClick={() => setSelectedInteraction(null)}
                   className="w-full bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl py-3 text-sm font-semibold transition-all cursor-pointer"
