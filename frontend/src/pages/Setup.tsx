@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { API_BASE } from '../config';
 import { 
   Server, 
   HelpCircle, 
@@ -27,7 +28,7 @@ export default function Setup() {
   const fetchCurrentSetup = async () => {
     setFetching(true);
     try {
-      const res = await fetch('/api/setup', {
+      const res = await fetch(`${API_BASE}/api/setup`, {
         headers: {
           Authorization: `Bearer ${token}`
         }
@@ -66,7 +67,7 @@ export default function Setup() {
     }
 
     try {
-      const res = await fetch('/api/setup', {
+      const res = await fetch(`${API_BASE}/api/setup`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

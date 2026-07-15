@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../components/AuthContext';
 import { Terminal, KeyRound, Mail, AlertCircle, Loader2 } from 'lucide-react';
+import { API_BASE } from '../config';
 
 export default function Login() {
   const [email, setEmail] = useState('');
@@ -18,7 +19,7 @@ export default function Login() {
     setLoading(true);
 
     try {
-      const res = await fetch('/auth/login', {
+      const res = await fetch(`${API_BASE}/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password }),

@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { API_BASE } from '../config';
 import { 
   RefreshCw, 
   CheckCircle2, 
@@ -51,7 +52,7 @@ export default function Dashboard() {
 
   const fetchStats = async () => {
     try {
-      const statsRes = await fetch('/api/interactions?limit=1000', {
+      const statsRes = await fetch(`${API_BASE}/api/interactions?limit=1000`, {
         headers: {
           Authorization: `Bearer ${token}`
         }
@@ -81,7 +82,7 @@ export default function Dashboard() {
   const fetchInteractions = async () => {
     setLoading(true);
     try {
-      let url = `/api/interactions?page=${page}&limit=${limit}`;
+      let url = `${API_BASE}/api/interactions?page=${page}&limit=${limit}`;
       if (commandFilter) url += `&command=${commandFilter}`;
       if (statusFilter) url += `&status=${statusFilter}`;
 

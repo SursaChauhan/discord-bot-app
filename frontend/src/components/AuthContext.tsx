@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import { API_BASE } from '../config';
 
 interface AuthContextType {
   isAuthenticated: boolean;
@@ -24,7 +25,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
 
       try {
-        const res = await fetch('/auth/me', {
+        const res = await fetch(`${API_BASE}/auth/me`, {
           headers: {
             Authorization: `Bearer ${token}`,
           },

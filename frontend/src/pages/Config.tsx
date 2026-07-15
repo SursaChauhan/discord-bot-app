@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { API_BASE } from '../config';
 import { Link } from 'react-router-dom';
 import { 
   Sparkles, 
@@ -45,7 +46,7 @@ export default function Config() {
     setLoading(true);
     setErrorMsg(null);
     try {
-      const res = await fetch('/api/config', {
+      const res = await fetch(`${API_BASE}/api/config`, {
         headers: {
           Authorization: `Bearer ${token}`
         }
@@ -83,7 +84,7 @@ export default function Config() {
     setSuccessMsg(null);
 
     try {
-      const res = await fetch('/api/config', {
+      const res = await fetch(`${API_BASE}/api/config`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
@@ -122,7 +123,7 @@ export default function Config() {
     setWebhookTestResult(null);
     try {
       // Call backend — Slack requires server-side request (CORS blocks direct browser calls)
-      const res = await fetch('/api/config/test-webhook', {
+      const res = await fetch(`${API_BASE}/api/config/test-webhook`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
