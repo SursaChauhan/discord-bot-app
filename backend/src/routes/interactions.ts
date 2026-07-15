@@ -7,21 +7,18 @@ import { DiscordInteraction, Variables } from '../types.js';
 
 const interactions = new Hono<{ Variables: Variables }>();
 
-// POST /interactions — Discord sends every slash command here
+// POST /interactions — Endpoint for Discord slash commands
 interactions.post('/', async (c) => {
-    // Body was already verified by verifyDiscord middleware
-    // and stored in context (stream can't be re-read)
+    // Body is verified by verifyDiscord middleware
     const rawBody = c.get('rawBody') as string;
     const body = JSON.parse(rawBody) as DiscordInteraction;
 
-    // ── PING (type 1) ──────────────────────────────────────────
-    // Discord sends this when you register the interactions URL.
-    // Must respond with { type: 1 } within 3 seconds or registration fails.
+    // Handle PING type from Discord setup
     if (body.type === 1) {
         return c.json({ type: 1 });
     }
 
-    // ── SLASH COMMAND (type 2) ─────────────────────────────────
+    // Handle Slash commands
     if (body.type === 2) {
         const guildId = body.guild_id ?? 'unknown';
         const userId = body.member?.user.id ?? 'unknown';
@@ -29,8 +26,7 @@ interactions.post('/', async (c) => {
         const commandName = body.data?.name ?? 'unknown';
         const commandText = body.data?.options?.[0]?.value ?? null;
 
-        // Step 1: Idempotency — attempt DB insert
-        // If interaction_id already exists (Discord retry), catch error 23505
+        // Idempotency: skip processing if we already inserted this interaction
         const { error: insertError } = await supabase
             .from('interactions')
             .insert({
@@ -45,40 +41,33 @@ interactions.post('/', async (c) => {
 
         if (insertError) {
             if (insertError.code === '23505') {
-                // Duplicate interaction — already processed, return silently
-                console.log(`[interactions] Duplicate ${body.id}, skipping`);
+                console.log(`[interactions] Duplicate interaction ${body.id}, skipping`);
                 return c.json({ type: 1 });
             }
-            console.error('[interactions] DB insert error:', insertError);
-            // Still return deferred — don't let DB errors cause Discord errors
+            console.error('[interactions] Database insert failed:', insertError);
         }
 
-        // Step 2: Return deferred response IMMEDIATELY
-        // This tells Discord "I got it, processing..." (shows loading state)
-        // We have 15 minutes after this to follow up via PATCH
         const appId = process.env.DISCORD_APP_ID!;
 
-        // Step 3: Fire-and-forget — do NOT await this
-        // processCommand runs async after we've already returned { type: 5 }
-        processCommand(body.id, body.token, appId, guildId, commandName, commandText).catch(
-            (err) => console.error('[interactions] processCommand error:', err)
+        // Process the command asynchronously to respond to Discord within 3s limit
+        processCommand(body.id, body.token, appId, guildId, userId, username, commandName, commandText).catch(
+            (err) => console.error('[interactions] Background command processing failed:', err)
         );
 
         return c.json({ type: 5 }); // DEFERRED_CHANNEL_MESSAGE_WITH_SOURCE
     }
 
-    // Unknown interaction type
     return c.json({ error: 'Unknown interaction type' }, 400);
 });
 
-// ── Async command processor ────────────────────────────────────────────────
-// Runs AFTER we've returned { type: 5 } to Discord
-// Has up to 15 minutes to follow up via Discord webhook
+// Process command execution in the background
 async function processCommand(
     interactionId: string,
     token: string,
     appId: string,
     guildId: string,
+    userId: string,
+    username: string,
     commandName: string,
     commandText: string | null
 ): Promise<void> {
@@ -88,7 +77,6 @@ async function processCommand(
     let mirrored = false;
 
     try {
-        // Fetch server config (channel_id, webhook URL, AI toggle)
         const { data: server } = await supabase
             .from('servers')
             .select('*')
@@ -97,11 +85,10 @@ async function processCommand(
 
         const aiEnabled = server?.config?.ai_enabled ?? false;
 
-        // ── /report command ──────────────────────────────────────
+        // Handle /report command
         if (commandName === 'report' && commandText) {
             let aiPart = '';
 
-            // Call Gemini only if AI is enabled AND text exists
             if (aiEnabled) {
                 const result = await summarizeReport(commandText);
                 if (result) {
@@ -112,14 +99,14 @@ async function processCommand(
 
             responseContent = `✅ **Report received!**\n📝 "${commandText}"${aiPart}`;
 
-            // Mirror to Slack
+            // Send mirror notification to Slack
             mirrored = await sendToSlack(
                 server?.mirror_webhook_url,
-                `📢 New report from ${guildId}\nUser: <@${interactionId}>\nText: ${commandText}${aiSummary ? `\nAI: ${JSON.parse(aiSummary).summary}` : ''}`
+                `📢 New report from ${guildId}\nUser: ${username} (<@${userId}>)\nText: ${commandText}${aiSummary ? `\nAI: ${JSON.parse(aiSummary).summary}` : ''}`
             );
         }
 
-        // ── /status command ──────────────────────────────────────
+        // Handle /status command
         else if (commandName === 'status') {
             const customResponse = server?.config?.custom_responses?.status;
             responseContent = customResponse ?? '✅ Bot is online and operational!';
@@ -130,28 +117,27 @@ async function processCommand(
             );
         }
 
-        // ── Unknown command ──────────────────────────────────────
+        // Handle fallback for unknown commands
         else {
             responseContent = `Unknown command: ${commandName}`;
         }
 
-        // Follow up with Discord — updates the "thinking..." deferred message
+        // Update the deferred channel message on Discord
         await followUpInteraction(appId, token, responseContent);
         responseSent = true;
 
-        // Also post to configured channel if set
+        // Post confirmation to the channel if configured
         if (server?.channel_id) {
             await postToChannel(server.channel_id, responseContent);
         }
 
     } catch (err) {
-        console.error('[processCommand] Error:', err);
-        // Try to send an error message to Discord so user isn't left hanging
+        console.error('[processCommand] Error handling command execution:', err);
         try {
             await followUpInteraction(appId, token, '❌ Something went wrong processing your command.');
         } catch { /* ignore */ }
     } finally {
-        // Always update the DB record — even on failure
+        // Track the completion status in the database
         await supabase
             .from('interactions')
             .update({

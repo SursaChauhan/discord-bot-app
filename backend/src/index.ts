@@ -13,29 +13,22 @@ import setup from './routes/setup.js';
 
 const app = new Hono<{ Variables: Variables }>();
 
-// ── Health check ───────────────────────────────────────────────────────────
+// Health check
 app.get('/', (c) => c.json({ status: 'ok', service: 'command-bot-backend' }));
 
-// ── Discord interactions ───────────────────────────────────────────────────
-// verifyDiscord MUST be registered before the route so it runs first.
-// It reads the raw body, verifies Ed25519, then stores rawBody in context
-// so the route can parse it without re-reading the consumed stream.
+// Discord webhook endpoint
 app.use('/interactions/*', verifyDiscord);
 app.route('/interactions', interactions);
 
-// ── Auth routes ────────────────────────────────────────────────────────────
-// POST /auth/login  → returns a JWT
-// POST /auth/logout → stateless, client discards token
-// GET  /auth/me     → validates token and returns user info
+// Authentication routes
 app.route('/auth', auth);
 
-// ── Protected API routes ───────────────────────────────────────────────────
-// All /api/* routes require a valid JWT (checked by requireAuth)
+// Protected dashboard API routes
 app.use('/api/*', requireAuth);
 app.route('/api', dashboard);
 app.route('/api/setup', setup);
 
-// ── Start server ───────────────────────────────────────────────────────────
+// Start HTTP server
 const PORT = parseInt(process.env.PORT ?? '3000');
 
 serve({ fetch: app.fetch, port: PORT }, (info) => {
