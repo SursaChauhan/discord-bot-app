@@ -91,6 +91,7 @@ export default function Config() {
         },
         body: JSON.stringify({
           guild_id: configData.guild_id,
+          mirror_webhook_url: webhookUrl,
           config: {
             ai_enabled: aiEnabled,
             custom_responses: {
@@ -100,31 +101,12 @@ export default function Config() {
         })
       });
 
-      // Update the webhook url as well (since webhook url is direct on server row but config object contains toggles)
-      // Wait, is mirror_webhook_url update part of the setup or patch endpoint?
-      // In setup.ts: setup.post('/', ...) updates mirror_webhook_url.
-      // In dashboard.ts: dashboard.patch('/config', ...) updates `config` (jsonb field).
-      // So to update the webhook URL, we should save it using setup POST upsert endpoint, OR verify if setup POST updates it.
-      // Let's call POST /api/setup with the updated mirror_webhook_url to make sure it saves both!
-      const setupRes = await fetch('/api/setup', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`
-        },
-        body: JSON.stringify({
-          guild_id: configData.guild_id,
-          guild_name: configData.guild_name,
-          channel_id: configData.channel_id,
-          mirror_webhook_url: webhookUrl
-        })
-      });
-
-      if (res.ok && setupRes.ok) {
+      if (res.ok) {
         setSuccessMsg('Configuration settings saved successfully.');
         fetchConfig();
       } else {
-        setErrorMsg('Failed to save configuration settings.');
+        const data = await res.json();
+        setErrorMsg(data.error || 'Failed to save configuration settings.');
       }
     } catch (err) {
       console.error(err);
@@ -139,34 +121,34 @@ export default function Config() {
     setTestingWebhook(true);
     setWebhookTestResult(null);
     try {
-      // Direct post check from frontend or route checking
-      // Hono's mirror service accepts webhook url. We can trigger a mock post to backend or run a fetch.
-      // Let's hit the webhook url directly from the browser to check if Slack accepts it (using POST)
-      // Slack webhooks have CORS restrictions, so a direct fetch from frontend might fail due to CORS.
-      // The best way is to send a request to a backend diagnostic endpoint or just try it.
-      // Wait, we don't have a test webhook endpoint on backend. But we can mock a /status command or send a fetch.
-      // Let's send a fetch directly to Slack (with 'no-cors' mode so it proceeds, although we won't read response).
-      // Slack requires JSON payload.
-      await fetch(webhookUrl, {
+      // Call backend — Slack requires server-side request (CORS blocks direct browser calls)
+      const res = await fetch('/api/config/test-webhook', {
         method: 'POST',
-        mode: 'no-cors',
         headers: {
           'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
         },
-        body: JSON.stringify({
-          text: '📡 **Slack webhook test** from the Command Bot Admin Panel. Connection confirmed! 🚀'
-        })
+        body: JSON.stringify({ webhook_url: webhookUrl })
       });
 
-      setWebhookTestResult({
-        success: true,
-        msg: 'Slack message dispatched (check your configured Slack channel!).'
-      });
+      const data = await res.json();
+
+      if (res.ok && data.success) {
+        setWebhookTestResult({
+          success: true,
+          msg: 'Slack message sent successfully — check your channel!'
+        });
+      } else {
+        setWebhookTestResult({
+          success: false,
+          msg: data.error || 'Slack rejected the test message. Verify the webhook URL.'
+        });
+      }
     } catch (err) {
       console.error(err);
       setWebhookTestResult({
         success: false,
-        msg: 'Failed to dispatch Slack message. Verify webhook URL.'
+        msg: 'Could not reach backend. Is the server running?'
       });
     } finally {
       setTestingWebhook(false);

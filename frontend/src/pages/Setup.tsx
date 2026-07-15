@@ -17,6 +17,7 @@ export default function Setup() {
   
   const [loading, setLoading] = useState(false);
   const [fetching, setFetching] = useState(true);
+  const [saved, setSaved] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
@@ -38,6 +39,7 @@ export default function Setup() {
           setGuildName(data.server.guild_name || '');
           setChannelId(data.server.channel_id || '');
           setWebhookUrl(data.server.mirror_webhook_url || '');
+          setSaved(true); // already configured — treat as saved state
         }
       }
     } catch (err) {
@@ -82,6 +84,7 @@ export default function Setup() {
 
       if (res.ok) {
         setSuccessMsg(data.message || 'Server setup successfully!');
+        setSaved(true);
       } else {
         setErrorMsg(data.error || 'Failed to save server details.');
       }
@@ -249,15 +252,33 @@ export default function Setup() {
           </div>
 
           <div className="flex justify-end pt-4 border-t border-slate-800/40">
+            {saved && (
+              <button
+                type="button"
+                onClick={() => { setSaved(false); setSuccessMsg(null); }}
+                className="mr-3 text-xs text-slate-500 hover:text-slate-300 underline cursor-pointer transition-colors"
+              >
+                Edit configuration
+              </button>
+            )}
             <button
               type="submit"
-              disabled={loading}
-              className="inline-flex items-center gap-2 rounded-xl bg-violet-600 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-violet-600/20 transition-all hover:bg-violet-500 active:scale-[0.98] disabled:bg-violet-600/50 cursor-pointer"
+              disabled={loading || saved}
+              className={`inline-flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold text-white shadow-lg transition-all active:scale-[0.98] cursor-pointer ${
+                saved
+                  ? 'bg-emerald-600/70 shadow-emerald-600/10 cursor-default'
+                  : 'bg-violet-600 shadow-violet-600/20 hover:bg-violet-500 disabled:bg-violet-600/50'
+              }`}
             >
               {loading ? (
                 <>
                   <Loader2 size={14} className="animate-spin" />
                   Saving Server Config...
+                </>
+              ) : saved ? (
+                <>
+                  <CheckIcon size={14} className="" />
+                  Configuration Saved
                 </>
               ) : (
                 <>

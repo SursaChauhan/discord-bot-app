@@ -71,17 +71,23 @@ dashboard.get('/config', async (c) => {
     return c.json({ configured: true, server: data });
 });
 
-// PATCH /api/config — update the JSONB config (AI toggle, custom responses)
+// PATCH /api/config — update config toggles AND mirror webhook url in one call
 dashboard.patch('/config', async (c) => {
-    const { guild_id, config } = await c.req.json();
+    const { guild_id, config, mirror_webhook_url } = await c.req.json();
 
     if (!guild_id) {
         return c.json({ error: 'guild_id required' }, 400);
     }
 
+    const updatePayload: Record<string, any> = { config };
+    // Only include mirror_webhook_url if caller sent it (empty string clears it)
+    if (mirror_webhook_url !== undefined) {
+        updatePayload.mirror_webhook_url = mirror_webhook_url || null;
+    }
+
     const { data, error } = await supabase
         .from('servers')
-        .update({ config })
+        .update(updatePayload)
         .eq('guild_id', guild_id)
         .select()
         .single();
@@ -94,4 +100,35 @@ dashboard.patch('/config', async (c) => {
     return c.json({ message: 'Config updated', server: data });
 });
 
+// POST /api/config/test-webhook — test Slack webhook server-side (real result, no CORS tricks)
+dashboard.post('/config/test-webhook', async (c) => {
+    const { webhook_url } = await c.req.json();
+
+    if (!webhook_url) {
+        return c.json({ error: 'webhook_url required' }, 400);
+    }
+
+    try {
+        const res = await fetch(webhook_url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                text: '📡 *Slack webhook test* from the Command Bot Admin Panel. Connection confirmed! 🚀'
+            }),
+        });
+
+        if (!res.ok) {
+            const body = await res.text();
+            console.error('[test-webhook] Slack error:', res.status, body);
+            return c.json({ success: false, error: `Slack rejected the message (${res.status})` }, 400);
+        }
+
+        return c.json({ success: true });
+    } catch (err: any) {
+        console.error('[test-webhook] Network error:', err.message);
+        return c.json({ success: false, error: 'Could not reach Slack — check the webhook URL' }, 502);
+    }
+});
+
 export default dashboard;
+
