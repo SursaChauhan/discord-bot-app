@@ -3,7 +3,7 @@
 // Called only when: command is /report AND server has ai_enabled: true
 
 const GEMINI_API_URL =
-    'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent';
+    'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent';
 
 export interface GeminiResult {
     summary: string;
@@ -35,7 +35,8 @@ Respond with this exact JSON format (no markdown, no code blocks):
         });
 
         if (!res.ok) {
-            console.error('[gemini] API error:', res.status);
+            const errBody = await res.text();
+            console.error('[gemini] API error:', res.status, errBody);
             return null;
         }
 
