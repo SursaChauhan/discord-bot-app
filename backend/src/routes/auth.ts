@@ -34,6 +34,17 @@ auth.post('/login', async (c) => {
         return c.json({ error: 'Invalid credentials' }, 401);
     }
 
+    // Verify user is in the admin allowlist
+    const { data: adminRow, error: adminError } = await supabase
+        .from('admin_users')
+        .select('id')
+        .eq('email', data.user.email!.trim())
+        .single();
+
+    if (adminError || !adminRow) {
+        return c.json({ error: 'Access denied: not an admin' }, 403);
+    }
+
     // Sign our own JWT with the user's email embedded
     const token = jwt.sign(
         { email: data.user.email, sub: data.user.id },
